@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { PoseLandmarker, FilesetResolver, PoseLandmarkerResult } from '@mediapipe/tasks-vision'
-import { Box, Button, Paper, Typography, LinearProgress, Alert, CircularProgress, Chip } from '@mui/material'
+import { Box, Button, Paper, Typography, LinearProgress, Alert, CircularProgress, Chip, FormControlLabel, Switch, Stack } from '@mui/material'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import CancelIcon from '@mui/icons-material/Cancel'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -73,6 +73,15 @@ export default function OneLegStanceTask() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [sessionResults, setSessionResults] = useState<api.SessionResponse | null>(null)
   const [apiConnected, setApiConnected] = useState(false)
+  const [debug, setDebug] = useState(false)
+  const [debugInfo, setDebugInfo] = useState({
+    leftVis: 0,
+    rightVis: 0,
+    heightDiff: 0,
+    haveHips: false,
+    haveAnkles: false,
+    poseDetected: false,
+  })
 
   // Text-to-Speech for Arabic instruction using Cartoon Assistant
   const speakArabic = useCallback(async (text: string) => {
@@ -102,13 +111,15 @@ export default function OneLegStanceTask() {
       const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-          delegate: 'GPU',
+          // Use CPU for broader compatibility; switch to 'GPU' if your browser supports it reliably
+          delegate: 'CPU',
         },
         runningMode: 'VIDEO',
         numPoses: 1,
-        minPoseDetectionConfidence: 0.5,
-        minPosePresenceConfidence: 0.5,
-        minTrackingConfidence: 0.5,
+        // Relax confidences to make initial detection easier
+        minPoseDetectionConfidence: 0.3,
+        minPosePresenceConfidence: 0.3,
+        minTrackingConfidence: 0.3,
       })
 
       poseLandmarkerRef.current = poseLandmarker
@@ -133,8 +144,8 @@ export default function OneLegStanceTask() {
     // Check if all required landmarks are visible
     if (
       !leftAnkle || !rightAnkle || !leftHip || !rightHip ||
-      leftAnkle.visibility < 0.5 || rightAnkle.visibility < 0.5 ||
-      leftHip.visibility < 0.5 || rightHip.visibility < 0.5
+      leftAnkle.visibility < 0.3 || rightAnkle.visibility < 0.3 ||
+      leftHip.visibility < 0.3 || rightHip.visibility < 0.3
     ) {
       return false
     }
@@ -162,28 +173,42 @@ export default function OneLegStanceTask() {
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
+    // Optional: draw all landmarks in debug mode
+    if (debug) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'
+      for (let i = 0; i < landmarks.length; i++) {
+        const lm = landmarks[i]
+        if (!lm || lm.visibility < 0.1) continue
+        const x = lm.x * canvasWidth
+        const y = lm.y * canvasHeight
+        ctx.beginPath()
+        ctx.arc(x, y, 4, 0, 2 * Math.PI)
+        ctx.fill()
+      }
+    }
+
     // Draw ankle points with status indication
     const leftAnkle = landmarks[LANDMARKS.LEFT_ANKLE]
     const rightAnkle = landmarks[LANDMARKS.RIGHT_ANKLE]
 
-    if (leftAnkle && leftAnkle.visibility > 0.5) {
+    if (leftAnkle && leftAnkle.visibility > 0.3) {
       const x = leftAnkle.x * canvasWidth
       const y = leftAnkle.y * canvasHeight
       ctx.fillStyle = taskStatus === 'detecting' ? '#4CAF50' : '#FFC107'
       ctx.beginPath()
-      ctx.arc(x, y, 12, 0, 2 * Math.PI)
+      ctx.arc(x, y, 10, 0, 2 * Math.PI)
       ctx.fill()
       ctx.strokeStyle = '#FFFFFF'
       ctx.lineWidth = 3
       ctx.stroke()
     }
 
-    if (rightAnkle && rightAnkle.visibility > 0.5) {
+    if (rightAnkle && rightAnkle.visibility > 0.3) {
       const x = rightAnkle.x * canvasWidth
       const y = rightAnkle.y * canvasHeight
       ctx.fillStyle = taskStatus === 'detecting' ? '#4CAF50' : '#FFC107'
       ctx.beginPath()
-      ctx.arc(x, y, 12, 0, 2 * Math.PI)
+      ctx.arc(x, y, 10, 0, 2 * Math.PI)
       ctx.fill()
       ctx.strokeStyle = '#FFFFFF'
       ctx.lineWidth = 3
@@ -208,7 +233,7 @@ export default function OneLegStanceTask() {
     // Draw legs
     drawConnection(LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_ANKLE, 'rgba(255, 255, 255, 0.6)')
     drawConnection(LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_ANKLE, 'rgba(255, 255, 255, 0.6)')
-  }, [taskStatus])
+  }, [taskStatus, debug])
 
   // Record pose frame
   const recordPoseFrame = useCallback((result: PoseLandmarkerResult, timestamp: number) => {
@@ -245,6 +270,34 @@ export default function OneLegStanceTask() {
 
       // Draw landmarks
       drawPoseLandmarks(result, canvas)
+
+      // Update debug info snapshot
+      const lmk = result.landmarks?.[0]
+      if (lmk) {
+        const leftAnkle = lmk[LANDMARKS.LEFT_ANKLE]
+        const rightAnkle = lmk[LANDMARKS.RIGHT_ANKLE]
+        const leftHip = lmk[LANDMARKS.LEFT_HIP]
+        const rightHip = lmk[LANDMARKS.RIGHT_HIP]
+        const haveAnkles = Boolean(leftAnkle && rightAnkle)
+        const haveHips = Boolean(leftHip && rightHip)
+        let heightDiff = 0
+        if (haveAnkles && haveHips) {
+          const avgHipY = (leftHip!.y + rightHip!.y) / 2
+          const leftAnkleHeight = avgHipY - leftAnkle!.y
+          const rightAnkleHeight = avgHipY - rightAnkle!.y
+          heightDiff = Math.abs(leftAnkleHeight - rightAnkleHeight)
+        }
+        setDebugInfo({
+          leftVis: leftAnkle?.visibility ?? 0,
+          rightVis: rightAnkle?.visibility ?? 0,
+          heightDiff,
+          haveHips,
+          haveAnkles,
+          poseDetected: true,
+        })
+      } else {
+        setDebugInfo((d) => ({ ...d, poseDetected: false }))
+      }
 
       // Record frames when detecting
       if (taskStatus === 'detecting' && taskStartTimeRef.current) {
@@ -513,12 +566,29 @@ export default function OneLegStanceTask() {
             size="small"
           />
         </Box>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
+          <FormControlLabel
+            control={<Switch checked={debug} onChange={(e) => setDebug(e.target.checked)} />}
+            label="Debug overlay"
+          />
+          {debug && (
+            <Chip
+              size="small"
+              label={`Ankle Δ: ${debugInfo.heightDiff.toFixed(3)} | L vis: ${debugInfo.leftVis.toFixed(2)} | R vis: ${debugInfo.rightVis.toFixed(2)}`}
+            />
+          )}
+        </Stack>
         <Typography variant="h4" sx={{ fontFamily: 'Arial', direction: 'rtl', color: '#1976d2', mb: 2 }}>
           {ARABIC_INSTRUCTION}
         </Typography>
         <Typography variant="body1" color="text.secondary">
           Stand on one leg for 10 seconds. The timer will start automatically when you lift one foot off the ground.
         </Typography>
+        {debug && (
+          <Typography variant="caption" color="text.secondary">
+            Tip: Make sure both hips and both ankles are visible (visibility ≥ 0.30). Raise one ankle clearly higher than the other. Threshold = {ANKLE_HEIGHT_THRESHOLD}.
+          </Typography>
+        )}
       </Paper>
 
       {/* Error Display */}
@@ -646,7 +716,7 @@ export default function OneLegStanceTask() {
 
       {/* Video and Canvas */}
       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-        <Box sx={{ position: 'relative', display: 'inline-block', borderRadius: 2, overflow: 'hidden', boxShadow: 3 }}>
+        <Box sx={{ position: 'relative', display: 'inline-block', borderRadius: 2, overflow: 'hidden', boxShadow: 3, transform: 'scaleX(-1)' }}>
           <video
             ref={videoRef}
             style={{ width: 640, maxWidth: '100%', background: '#000', display: 'block' }}
