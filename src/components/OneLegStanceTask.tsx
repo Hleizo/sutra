@@ -178,7 +178,7 @@ export default function OneLegStanceTask() {
       ctx.fillStyle = 'rgba(255,255,255,0.7)'
       for (let i = 0; i < landmarks.length; i++) {
         const lm = landmarks[i]
-        if (!lm || lm.visibility < 0.1) continue
+        if (!lm) continue
         const x = lm.x * canvasWidth
         const y = lm.y * canvasHeight
         ctx.beginPath()
@@ -574,7 +574,7 @@ export default function OneLegStanceTask() {
           {debug && (
             <Chip
               size="small"
-              label={`Ankle Δ: ${debugInfo.heightDiff.toFixed(3)} | L vis: ${debugInfo.leftVis.toFixed(2)} | R vis: ${debugInfo.rightVis.toFixed(2)}`}
+              label={`Ankle Δ: ${debugInfo.heightDiff.toFixed(3)} | L vis: ${debugInfo.leftVis.toFixed(2)} | R vis: ${debugInfo.rightVis.toFixed(2)} | pose: ${debugInfo.poseDetected ? 'yes' : 'no'}`}
             />
           )}
         </Stack>
