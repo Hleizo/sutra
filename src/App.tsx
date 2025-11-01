@@ -6,6 +6,7 @@ import Results from './pages/Results.tsx'
 import AdminDashboard from './pages/AdminDashboard.tsx'
 import ReplayPage from './pages/ReplayPage.tsx'
 import TestPage from './pages/TestPage.tsx'
+import UltimateTestPage from './pages/UltimateTestPage.tsx'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/replay" element={<ReplayPage />} />
       <Route path="/test" element={<TestPage />} />
+      <Route path="/ultimate" element={<UltimateTestPage />} />
     </Routes>
   )
 }

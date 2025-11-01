@@ -194,16 +194,17 @@ export default function OneLegStanceTask() {
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-    // ALWAYS draw all landmarks as small green dots (like test page)
+    // COPY EXACT CODE FROM ULTIMATE TEST - Draw green dots
     ctx.fillStyle = '#00ff00'
     for (let i = 0; i < landmarks.length; i++) {
       const lm = landmarks[i]
-      if (!lm || !lm.visibility || lm.visibility < 0.3) continue
-      const x = lm.x * canvasWidth
-      const y = lm.y * canvasHeight
-      ctx.beginPath()
-      ctx.arc(x, y, 3, 0, 2 * Math.PI)
-      ctx.fill()
+      if (lm && lm.visibility > 0.3) {
+        const x = lm.x * canvasWidth
+        const y = lm.y * canvasHeight
+        ctx.beginPath()
+        ctx.arc(x, y, 4, 0, 2 * Math.PI)
+        ctx.fill()
+      }
     }
     
     // Draw skeleton connections
@@ -233,40 +234,6 @@ export default function OneLegStanceTask() {
     drawLine(25, 27) // left lower leg
     drawLine(24, 26) // right upper leg
     drawLine(26, 28) // right lower leg
-    
-    // Draw BIGGER dots on ankles with labels
-    const leftAnkle = landmarks[LANDMARKS.LEFT_ANKLE]
-    const rightAnkle = landmarks[LANDMARKS.RIGHT_ANKLE]
-
-    if (leftAnkle && leftAnkle.visibility > 0.3) {
-      const x = leftAnkle.x * canvasWidth
-      const y = leftAnkle.y * canvasHeight
-      ctx.fillStyle = '#00ff00'
-      ctx.beginPath()
-      ctx.arc(x, y, 12, 0, 2 * Math.PI)
-      ctx.fill()
-      ctx.strokeStyle = '#FFFFFF'
-      ctx.lineWidth = 3
-      ctx.stroke()
-      ctx.fillStyle = '#FFFFFF'
-      ctx.font = 'bold 16px Arial'
-      ctx.fillText('LEFT', x - 25, y - 15)
-    }
-
-    if (rightAnkle && rightAnkle.visibility > 0.3) {
-      const x = rightAnkle.x * canvasWidth
-      const y = rightAnkle.y * canvasHeight
-      ctx.fillStyle = '#00ff00'
-      ctx.beginPath()
-      ctx.arc(x, y, 12, 0, 2 * Math.PI)
-      ctx.fill()
-      ctx.strokeStyle = '#FFFFFF'
-      ctx.lineWidth = 3
-      ctx.stroke()
-      ctx.fillStyle = '#FFFFFF'
-      ctx.font = 'bold 16px Arial'
-      ctx.fillText('RIGHT', x - 30, y - 15)
-    }
   }, [])
 
   // Record pose frame
