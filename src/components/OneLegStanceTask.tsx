@@ -12,7 +12,7 @@ type TaskStatus = 'idle' | 'ready' | 'detecting' | 'success' | 'failed'
 
 const ARABIC_INSTRUCTION = 'وقف على رجل وحدة!'
 const TASK_DURATION = 10 // seconds
-const ANKLE_HEIGHT_THRESHOLD = 0.05 // minimum height difference to consider foot lifted (5% of frame height)
+const ANKLE_HEIGHT_THRESHOLD = 0.01 // VERY SENSITIVE - just 1% difference (even slight lift will trigger)
 
 // MediaPipe Pose landmark indices
 const LANDMARKS = {
@@ -73,7 +73,7 @@ export default function OneLegStanceTask() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [sessionResults, setSessionResults] = useState<api.SessionResponse | null>(null)
   const [apiConnected, setApiConnected] = useState(false)
-  const [debug, setDebug] = useState(false)
+  const [debug, setDebug] = useState(true) // Enable debug by default to help troubleshoot
   const [debugInfo, setDebugInfo] = useState({
     leftVis: 0,
     rightVis: 0,
@@ -98,34 +98,40 @@ export default function OneLegStanceTask() {
 
   // Initialize MediaPipe Pose Landmarker
   const initializePoseLandmarker = useCallback(async () => {
-    if (poseLandmarkerRef.current) return
+    if (poseLandmarkerRef.current) {
+      console.log('✓ PoseLandmarker already initialized')
+      return
+    }
 
     try {
       setIsModelLoading(true)
       setError(null)
+      console.log('Loading MediaPipe vision tasks...')
 
       const vision = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
       )
+      console.log('✓ Vision tasks loaded')
 
+      console.log('Creating PoseLandmarker...')
       const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-          // Use CPU for broader compatibility; switch to 'GPU' if your browser supports it reliably
           delegate: 'CPU',
         },
         runningMode: 'VIDEO',
         numPoses: 1,
-        // Relax confidences to make initial detection easier
-        minPoseDetectionConfidence: 0.3,
-        minPosePresenceConfidence: 0.3,
-        minTrackingConfidence: 0.3,
+        // EXACT SAME AS TEST PAGE THAT WORKED
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
       })
 
       poseLandmarkerRef.current = poseLandmarker
+      console.log('✓ PoseLandmarker initialized successfully')
       setIsModelLoading(false)
     } catch (err: any) {
-      console.error('Failed to initialize PoseLandmarker:', err)
+      console.error('❌ Failed to initialize PoseLandmarker:', err)
       setError(`Failed to load pose detection model: ${err?.message || err}`)
       setIsModelLoading(false)
     }
@@ -141,12 +147,20 @@ export default function OneLegStanceTask() {
     const leftHip = landmarks[LANDMARKS.LEFT_HIP]
     const rightHip = landmarks[LANDMARKS.RIGHT_HIP]
 
-    // Check if all required landmarks are visible
+    // Check if all required landmarks are visible (VERY low threshold)
     if (
       !leftAnkle || !rightAnkle || !leftHip || !rightHip ||
-      leftAnkle.visibility < 0.3 || rightAnkle.visibility < 0.3 ||
-      leftHip.visibility < 0.3 || rightHip.visibility < 0.3
+      leftAnkle.visibility < 0.1 || rightAnkle.visibility < 0.1 ||
+      leftHip.visibility < 0.1 || rightHip.visibility < 0.1
     ) {
+      if (Math.random() < 0.05) {
+        console.log('❌ Missing landmarks:', { 
+          leftAnkle: leftAnkle?.visibility, 
+          rightAnkle: rightAnkle?.visibility,
+          leftHip: leftHip?.visibility,
+          rightHip: rightHip?.visibility
+        })
+      }
       return false
     }
 
@@ -159,7 +173,14 @@ export default function OneLegStanceTask() {
     const heightDiff = Math.abs(leftAnkleHeight - rightAnkleHeight)
 
     // One foot is off the ground if there's significant height difference
-    return heightDiff > ANKLE_HEIGHT_THRESHOLD
+    const detected = heightDiff > ANKLE_HEIGHT_THRESHOLD
+    
+    // Log occasionally (not every frame - too much)
+    if (Math.random() < 0.05) {
+      console.log(`🔍 Stance: Δ=${heightDiff.toFixed(4)}, threshold=${ANKLE_HEIGHT_THRESHOLD}, detected=${detected ? '✅' : '❌'}`)
+    }
+    
+    return detected
   }, [])
 
   // Draw pose landmarks on canvas
@@ -173,67 +194,80 @@ export default function OneLegStanceTask() {
 
     ctx.clearRect(0, 0, canvasWidth, canvasHeight)
 
-    // Optional: draw all landmarks in debug mode
-    if (debug) {
-      ctx.fillStyle = 'rgba(255,255,255,0.7)'
-      for (let i = 0; i < landmarks.length; i++) {
-        const lm = landmarks[i]
-        if (!lm) continue
-        const x = lm.x * canvasWidth
-        const y = lm.y * canvasHeight
+    // ALWAYS draw all landmarks as small green dots (like test page)
+    ctx.fillStyle = '#00ff00'
+    for (let i = 0; i < landmarks.length; i++) {
+      const lm = landmarks[i]
+      if (!lm || !lm.visibility || lm.visibility < 0.3) continue
+      const x = lm.x * canvasWidth
+      const y = lm.y * canvasHeight
+      ctx.beginPath()
+      ctx.arc(x, y, 3, 0, 2 * Math.PI)
+      ctx.fill()
+    }
+    
+    // Draw skeleton connections
+    ctx.strokeStyle = '#00ff00'
+    ctx.lineWidth = 2
+    const drawLine = (i1: number, i2: number) => {
+      const lm1 = landmarks[i1]
+      const lm2 = landmarks[i2]
+      if (lm1 && lm2 && lm1.visibility > 0.3 && lm2.visibility > 0.3) {
         ctx.beginPath()
-        ctx.arc(x, y, 4, 0, 2 * Math.PI)
-        ctx.fill()
+        ctx.moveTo(lm1.x * canvasWidth, lm1.y * canvasHeight)
+        ctx.lineTo(lm2.x * canvasWidth, lm2.y * canvasHeight)
+        ctx.stroke()
       }
     }
-
-    // Draw ankle points with status indication
+    
+    // Body connections
+    drawLine(11, 12) // shoulders
+    drawLine(11, 23) // left torso
+    drawLine(12, 24) // right torso
+    drawLine(23, 24) // hips
+    drawLine(11, 13) // left upper arm
+    drawLine(13, 15) // left lower arm
+    drawLine(12, 14) // right upper arm
+    drawLine(14, 16) // right lower arm
+    drawLine(23, 25) // left upper leg
+    drawLine(25, 27) // left lower leg
+    drawLine(24, 26) // right upper leg
+    drawLine(26, 28) // right lower leg
+    
+    // Draw BIGGER dots on ankles with labels
     const leftAnkle = landmarks[LANDMARKS.LEFT_ANKLE]
     const rightAnkle = landmarks[LANDMARKS.RIGHT_ANKLE]
 
     if (leftAnkle && leftAnkle.visibility > 0.3) {
       const x = leftAnkle.x * canvasWidth
       const y = leftAnkle.y * canvasHeight
-      ctx.fillStyle = taskStatus === 'detecting' ? '#4CAF50' : '#FFC107'
+      ctx.fillStyle = '#00ff00'
       ctx.beginPath()
-      ctx.arc(x, y, 10, 0, 2 * Math.PI)
+      ctx.arc(x, y, 12, 0, 2 * Math.PI)
       ctx.fill()
       ctx.strokeStyle = '#FFFFFF'
       ctx.lineWidth = 3
       ctx.stroke()
+      ctx.fillStyle = '#FFFFFF'
+      ctx.font = 'bold 16px Arial'
+      ctx.fillText('LEFT', x - 25, y - 15)
     }
 
     if (rightAnkle && rightAnkle.visibility > 0.3) {
       const x = rightAnkle.x * canvasWidth
       const y = rightAnkle.y * canvasHeight
-      ctx.fillStyle = taskStatus === 'detecting' ? '#4CAF50' : '#FFC107'
+      ctx.fillStyle = '#00ff00'
       ctx.beginPath()
-      ctx.arc(x, y, 10, 0, 2 * Math.PI)
+      ctx.arc(x, y, 12, 0, 2 * Math.PI)
       ctx.fill()
       ctx.strokeStyle = '#FFFFFF'
       ctx.lineWidth = 3
       ctx.stroke()
+      ctx.fillStyle = '#FFFFFF'
+      ctx.font = 'bold 16px Arial'
+      ctx.fillText('RIGHT', x - 30, y - 15)
     }
-
-    // Draw simple skeleton for reference
-    const drawConnection = (idx1: number, idx2: number, color: string) => {
-      const lm1 = landmarks[idx1]
-      const lm2 = landmarks[idx2]
-      if (!lm1 || !lm2 || lm1.visibility < 0.5 || lm2.visibility < 0.5) return
-
-      ctx.strokeStyle = color
-      ctx.lineWidth = 3
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(lm1.x * canvasWidth, lm1.y * canvasHeight)
-      ctx.lineTo(lm2.x * canvasWidth, lm2.y * canvasHeight)
-      ctx.stroke()
-    }
-
-    // Draw legs
-    drawConnection(LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_ANKLE, 'rgba(255, 255, 255, 0.6)')
-    drawConnection(LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_ANKLE, 'rgba(255, 255, 255, 0.6)')
-  }, [taskStatus, debug])
+  }, [])
 
   // Record pose frame
   const recordPoseFrame = useCallback((result: PoseLandmarkerResult, timestamp: number) => {
@@ -261,12 +295,31 @@ export default function OneLegStanceTask() {
     const poseLandmarker = poseLandmarkerRef.current
 
     if (!video || !canvas || !poseLandmarker || !isCameraActive) {
+      if (Math.random() < 0.01) {
+        console.log('⏸️ processFrame skipped:', { video: !!video, canvas: !!canvas, poseLandmarker: !!poseLandmarker, isCameraActive })
+      }
       return
     }
 
     try {
       const now = performance.now()
+      
+      // Check video is actually playing
+      if (Math.random() < 0.02) {
+        console.log('📹 Video state:', { 
+          videoWidth: video.videoWidth, 
+          videoHeight: video.videoHeight,
+          readyState: video.readyState,
+          paused: video.paused
+        })
+      }
+      
       const result = poseLandmarker.detectForVideo(video, now)
+
+      // Log detection status MORE frequently
+      if (Math.random() < 0.1) { // 10% of frames
+        console.log('🔍 Pose detection result:', result.landmarks?.length ? `✓ ${result.landmarks.length} pose(s)` : '❌ NO POSE DETECTED')
+      }
 
       // Draw landmarks
       drawPoseLandmarks(result, canvas)
@@ -309,6 +362,7 @@ export default function OneLegStanceTask() {
       if (taskStatus === 'ready') {
         const isOneLeg = detectOneLegStance(result)
         if (isOneLeg) {
+          console.log('🎯 ONE LEG STANCE DETECTED! Starting timer...')
           // Start the task timer
           setTaskStatus('detecting')
           taskStartTimeRef.current = Date.now()
@@ -328,6 +382,7 @@ export default function OneLegStanceTask() {
                 clearInterval(timerIntervalRef.current)
                 timerIntervalRef.current = null
               }
+              console.log('✅ Task completed successfully!')
               setTaskStatus('success')
               // Send data to backend
               sendToBackend()
@@ -351,7 +406,7 @@ export default function OneLegStanceTask() {
     }
 
     animationFrameRef.current = requestAnimationFrame(processFrame)
-  }, [isCameraActive, taskStatus, detectOneLegStance, drawPoseLandmarks, recordPoseFrame])
+  }, [isCameraActive, taskStatus, detectOneLegStance, recordPoseFrame, drawPoseLandmarks])
 
   // Send recorded data to backend
   const sendToBackend = useCallback(async () => {
@@ -445,6 +500,7 @@ export default function OneLegStanceTask() {
 
   // Start camera
   const startCamera = useCallback(async () => {
+    console.log('Starting camera...')
     setError(null)
     stopCamera()
 
@@ -465,7 +521,9 @@ export default function OneLegStanceTask() {
         video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false,
       }
+      console.log('Requesting camera access...')
       const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      console.log('✓ Camera access granted')
       streamRef.current = stream
 
       if (!videoRef.current) return
@@ -474,6 +532,11 @@ export default function OneLegStanceTask() {
       videoRef.current.muted = true
 
       await videoRef.current.play()
+      console.log('✓ Video playing')
+
+      // Wait a bit for video to be fully ready
+      await new Promise(resolve => setTimeout(resolve, 500))
+      console.log('✓ Waited 500ms for video to stabilize')
 
       const setCanvasSize = () => {
         const canvas = canvasRef.current
@@ -481,15 +544,22 @@ export default function OneLegStanceTask() {
         if (!canvas || !video) return
         canvas.width = video.videoWidth || 640
         canvas.height = video.videoHeight || 480
+        console.log(`📐 Canvas size set to ${canvas.width}x${canvas.height}, video: ${video.videoWidth}x${video.videoHeight}`)
+        
+        // Force video to be ready
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+          console.warn('⚠️ Video dimensions are 0! Video may not be ready.')
+        }
       }
 
       setCanvasSize()
       videoRef.current.addEventListener('loadedmetadata', setCanvasSize)
 
       setIsCameraActive(true)
+      console.log('✓ Camera active, starting pose detection loop')
       animationFrameRef.current = requestAnimationFrame(processFrame)
     } catch (err: any) {
-      console.error('startCamera error', err)
+      console.error('❌ startCamera error', err)
       if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
         setError('Camera access denied. Please grant permission.')
       } else if (err && err.name === 'NotFoundError') {
@@ -572,10 +642,17 @@ export default function OneLegStanceTask() {
             label="Debug overlay"
           />
           {debug && (
-            <Chip
-              size="small"
-              label={`Ankle Δ: ${debugInfo.heightDiff.toFixed(3)} | L vis: ${debugInfo.leftVis.toFixed(2)} | R vis: ${debugInfo.rightVis.toFixed(2)} | pose: ${debugInfo.poseDetected ? 'yes' : 'no'}`}
-            />
+            <>
+              <Chip
+                size="small"
+                label={`Ankle Δ: ${debugInfo.heightDiff.toFixed(3)} | L vis: ${debugInfo.leftVis.toFixed(2)} | R vis: ${debugInfo.rightVis.toFixed(2)} | pose: ${debugInfo.poseDetected ? 'yes' : 'no'}`}
+              />
+              <Chip
+                size="small"
+                color={taskStatus === 'ready' ? 'primary' : 'default'}
+                label={`Status: ${taskStatus}`}
+              />
+            </>
           )}
         </Stack>
         <Typography variant="h4" sx={{ fontFamily: 'Arial', direction: 'rtl', color: '#1976d2', mb: 2 }}>
@@ -585,9 +662,36 @@ export default function OneLegStanceTask() {
           Stand on one leg for 10 seconds. The timer will start automatically when you lift one foot off the ground.
         </Typography>
         {debug && (
-          <Typography variant="caption" color="text.secondary">
-            Tip: Make sure both hips and both ankles are visible (visibility ≥ 0.30). Raise one ankle clearly higher than the other. Threshold = {ANKLE_HEIGHT_THRESHOLD}.
+          <Typography variant="caption" color="text.secondary" display="block">
+            Tip: Make sure both hips and both ankles are visible (visibility ≥ 0.20). Raise one ankle clearly higher than the other. Threshold = {ANKLE_HEIGHT_THRESHOLD}.
           </Typography>
+        )}
+        {taskStatus === 'ready' && (
+          <Alert 
+            severity={debugInfo.heightDiff > ANKLE_HEIGHT_THRESHOLD ? 'success' : 'warning'} 
+            sx={{ 
+              mt: 1, 
+              fontSize: '1.2rem', 
+              fontWeight: 'bold',
+              '& .MuiAlert-message': { width: '100%' }
+            }}
+          >
+            {debugInfo.heightDiff > ANKLE_HEIGHT_THRESHOLD ? (
+              <Box sx={{ textAlign: 'center', width: '100%' }}>
+                🎯 DETECTION ACTIVE! Height: {debugInfo.heightDiff.toFixed(4)} &gt; {ANKLE_HEIGHT_THRESHOLD}
+                <br />
+                <Typography variant="h6" sx={{ color: 'success.dark', mt: 1 }}>
+                  TIMER SHOULD START NOW!!! 🚀
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ textAlign: 'center', width: '100%' }}>
+                ⬆️ LIFT ONE FOOT OFF THE GROUND! ⬆️
+                <br />
+                Current: {debugInfo.heightDiff.toFixed(4)} / Need: {ANKLE_HEIGHT_THRESHOLD}
+              </Box>
+            )}
+          </Alert>
         )}
       </Paper>
 
@@ -601,6 +705,21 @@ export default function OneLegStanceTask() {
       {/* Model Loading */}
       {isModelLoading && (
         <Alert severity="info">Loading pose detection model...</Alert>
+      )}
+
+      {/* Pose Detection Status */}
+      {isCameraActive && !debugInfo.poseDetected && (
+        <Alert severity="warning">
+          ⚠️ No pose detected. Make sure you are fully visible in the camera with good lighting.
+          Stand back so your full body (head to feet) is in frame.
+        </Alert>
+      )}
+      
+      {isCameraActive && debugInfo.poseDetected && (!debugInfo.haveHips || !debugInfo.haveAnkles) && (
+        <Alert severity="warning">
+          ⚠️ Cannot see {!debugInfo.haveHips ? 'hips' : ''} {!debugInfo.haveHips && !debugInfo.haveAnkles ? 'and' : ''} {!debugInfo.haveAnkles ? 'ankles' : ''}.
+          Step back from the camera to show your full body.
+        </Alert>
       )}
 
       {/* Task Status Display */}

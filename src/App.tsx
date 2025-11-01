@@ -5,6 +5,7 @@ import Session from './pages/Session.tsx'
 import Results from './pages/Results.tsx'
 import AdminDashboard from './pages/AdminDashboard.tsx'
 import ReplayPage from './pages/ReplayPage.tsx'
+import TestPage from './pages/TestPage.tsx'
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
       <Route path="/results" element={<Results />} />
       <Route path="/admin" element={<AdminDashboard />} />
       <Route path="/replay" element={<ReplayPage />} />
+      <Route path="/test" element={<TestPage />} />
     </Routes>
   )
 }
