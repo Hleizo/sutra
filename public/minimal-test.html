@@ -3,33 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ABSOLUTE MINIMAL POSE TEST</title>
+    <title>ULTRA SIMPLE MEDIAPIPE TEST</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
+            margin: 20px;
             background: #000;
             color: #0f0;
-        }
-        #container {
-            position: relative;
-            display: inline-block;
         }
         video {
             width: 640px;
             height: 480px;
             background: #000;
-            transform: scaleX(-1);
+            border: 3px solid #0f0;
+            display: block;
+            margin: 20px 0;
         }
         canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
             width: 640px;
             height: 480px;
-            transform: scaleX(-1);
+            border: 3px solid #f00;
+            display: block;
+            margin: 20px 0;
         }
         button {
             font-size: 24px;
@@ -42,31 +37,31 @@
             font-weight: bold;
         }
         #status {
-            font-size: 20px;
+            font-size: 24px;
             margin: 20px 0;
             padding: 15px;
             background: #111;
             border: 2px solid #0f0;
+            font-weight: bold;
         }
-        #debug {
-            font-size: 16px;
-            margin: 10px 0;
+        .log {
+            font-size: 14px;
+            margin: 5px 0;
             font-family: monospace;
         }
     </style>
 </head>
 <body>
-    <h1>🔥 ABSOLUTE MINIMAL MEDIAPIPE TEST 🔥</h1>
-    <div id="status">Click START button</div>
-    <div id="debug"></div>
+    <h1>🔥 ULTRA SIMPLE TEST - STEP BY STEP 🔥</h1>
+    <h2>INSTRUCTIONS: Stand back 6 feet from camera so full body is visible!</h2>
     <button onclick="start()">START</button>
-    <button onclick="beginTask()">BEGIN TASK</button>
     <button onclick="stop()">STOP</button>
-    
-    <div id="container">
-        <video id="video" autoplay playsinline></video>
-        <canvas id="canvas"></canvas>
-    </div>
+    <div id="status">Not started</div>
+    <div id="logs"></div>
+    <h3>VIDEO (Your camera feed):</h3>
+    <video id="video" autoplay playsinline muted></video>
+    <h3>CANVAS (Green skeleton should appear here):</h3>
+    <canvas id="canvas"></canvas>
 
     <script type="module">
         import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -76,21 +71,34 @@
         let canvas = null;
         let ctx = null;
         let animationId = null;
-        let taskActive = false;
-        let taskStartTime = null;
-        let timerInterval = null;
+        let frameCount = 0;
+        let detectionCount = 0;
+
+        function log(msg) {
+            const logs = document.getElementById('logs');
+            const div = document.createElement('div');
+            div.className = 'log';
+            div.textContent = new Date().toLocaleTimeString() + ': ' + msg;
+            logs.appendChild(div);
+            console.log(msg);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateStatus(msg) {
+            document.getElementById('status').textContent = msg;
+            log(msg);
+        }
 
         window.start = async function() {
             try {
-                updateStatus('Loading MediaPipe...');
-                console.log('🔵 Loading MediaPipe...');
+                updateStatus('STEP 1: Loading MediaPipe from CDN...');
                 
                 const vision = await FilesetResolver.forVisionTasks(
                     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
                 );
-                console.log('✅ Vision tasks loaded');
-                updateStatus('Creating PoseLandmarker...');
+                updateStatus('✅ STEP 1 DONE: MediaPipe loaded');
                 
+                updateStatus('STEP 2: Creating PoseLandmarker with LOW thresholds...');
                 poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
@@ -98,13 +106,13 @@
                     },
                     runningMode: 'VIDEO',
                     numPoses: 1,
-                    minPoseDetectionConfidence: 0.5,
-                    minPosePresenceConfidence: 0.5,
-                    minTrackingConfidence: 0.5,
+                    minPoseDetectionConfidence: 0.3,  // LOWERED from 0.5
+                    minPosePresenceConfidence: 0.3,   // LOWERED from 0.5
+                    minTrackingConfidence: 0.3,       // LOWERED from 0.5
                 });
-                console.log('✅ PoseLandmarker created');
-                updateStatus('Starting camera...');
+                updateStatus('✅ STEP 2 DONE: PoseLandmarker created');
                 
+                updateStatus('STEP 3: Requesting camera access...');
                 video = document.getElementById('video');
                 canvas = document.getElementById('canvas');
                 ctx = canvas.getContext('2d');
@@ -112,70 +120,85 @@
                 const stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
                 });
-                console.log('✅ Camera stream obtained');
+                updateStatus('✅ STEP 3 DONE: Camera access granted');
                 
                 video.srcObject = stream;
                 await video.play();
-                console.log('✅ Video playing');
+                updateStatus('✅ STEP 4 DONE: Video playing');
+                
+                // Wait for video to be ready
+                await new Promise(resolve => setTimeout(resolve, 1000));
                 
                 canvas.width = video.videoWidth || 640;
                 canvas.height = video.videoHeight || 480;
-                console.log(`✅ Canvas: ${canvas.width}x${canvas.height}`);
+                updateStatus(`✅ STEP 5 DONE: Canvas ${canvas.width}x${canvas.height}`);
                 
-                updateStatus('✅ READY! You should see GREEN SKELETON now!');
+                updateStatus('🔄 STARTING DETECTION LOOP...');
+                log('⚠️ STAND BACK 6 FEET! Make sure FULL BODY visible!');
                 processFrame();
                 
             } catch (err) {
-                console.error('❌ ERROR:', err);
                 updateStatus('❌ ERROR: ' + err.message);
+                log('Full error: ' + JSON.stringify(err));
             }
-        };
-
-        window.beginTask = function() {
-            taskActive = true;
-            taskStartTime = null;
-            updateStatus('🙌 RAISE YOUR HAND ABOVE SHOULDER!');
-            console.log('▶️ Task ready - raise hand to start timer');
         };
 
         window.stop = function() {
             if (animationId) cancelAnimationFrame(animationId);
-            if (timerInterval) clearInterval(timerInterval);
             if (video && video.srcObject) {
                 video.srcObject.getTracks().forEach(t => t.stop());
             }
-            taskActive = false;
             updateStatus('Stopped');
         };
 
         function processFrame() {
             if (!video || !canvas || !poseLandmarker) return;
             
+            frameCount++;
+            
             try {
                 const result = poseLandmarker.detectForVideo(video, performance.now());
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Clear canvas
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
                 
                 if (result.landmarks && result.landmarks[0]) {
+                    detectionCount++;
                     const landmarks = result.landmarks[0];
                     
-                    // Draw ALL landmarks GREEN
+                    // Log every 30 frames (about once per second)
+                    if (frameCount % 30 === 0) {
+                        log(`✅ POSE DETECTED! Frame ${frameCount}, Detection #${detectionCount}, Landmarks: ${landmarks.length}`);
+                        updateStatus(`✅ DETECTING! Frames: ${frameCount}, Detections: ${detectionCount}`);
+                    }
+                    
+                    // Draw HUGE GREEN dots on ALL landmarks
                     ctx.fillStyle = '#00ff00';
                     for (let i = 0; i < landmarks.length; i++) {
                         const lm = landmarks[i];
-                        if (lm && lm.visibility > 0.3) {
+                        if (lm && lm.visibility > 0.1) {  // Very low threshold
+                            const x = lm.x * canvas.width;
+                            const y = lm.y * canvas.height;
                             ctx.beginPath();
-                            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 6, 0, 2 * Math.PI);
+                            ctx.arc(x, y, 8, 0, 2 * Math.PI);
                             ctx.fill();
+                            
+                            // Draw landmark number
+                            ctx.fillStyle = '#ffffff';
+                            ctx.font = '12px Arial';
+                            ctx.fillText(i, x + 10, y);
+                            ctx.fillStyle = '#00ff00';
                         }
                     }
                     
-                    // Draw skeleton GREEN
+                    // Draw skeleton connections - THICK GREEN LINES
                     ctx.strokeStyle = '#00ff00';
-                    ctx.lineWidth = 3;
+                    ctx.lineWidth = 4;
                     const draw = (i1, i2) => {
                         const lm1 = landmarks[i1];
                         const lm2 = landmarks[i2];
-                        if (lm1 && lm2 && lm1.visibility > 0.3 && lm2.visibility > 0.3) {
+                        if (lm1 && lm2 && lm1.visibility > 0.1 && lm2.visibility > 0.1) {
                             ctx.beginPath();
                             ctx.moveTo(lm1.x * canvas.width, lm1.y * canvas.height);
                             ctx.lineTo(lm2.x * canvas.width, lm2.y * canvas.height);
@@ -183,83 +206,45 @@
                         }
                     };
                     
-                    // Body connections
+                    // Draw ALL body connections
                     draw(11, 12); draw(11, 23); draw(12, 24); draw(23, 24);
                     draw(11, 13); draw(13, 15); draw(12, 14); draw(14, 16);
                     draw(23, 25); draw(25, 27); draw(24, 26); draw(26, 28);
+                    draw(0, 1); draw(1, 2); draw(2, 3); draw(3, 7);
+                    draw(0, 4); draw(4, 5); draw(5, 6); draw(6, 8);
                     
-                    // RED dots on shoulders and wrists
+                    // HUGE RED dots on key landmarks
                     ctx.fillStyle = '#ff0000';
-                    [11, 12, 15, 16].forEach(idx => {
+                    [0, 11, 12, 15, 16, 23, 24, 27, 28].forEach(idx => {
                         const lm = landmarks[idx];
-                        if (lm && lm.visibility > 0.3) {
+                        if (lm && lm.visibility > 0.1) {
                             ctx.beginPath();
-                            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 12, 0, 2 * Math.PI);
+                            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 15, 0, 2 * Math.PI);
                             ctx.fill();
                         }
                     });
                     
-                    // Check hand raised
-                    const leftWrist = landmarks[15];
-                    const rightWrist = landmarks[16];
-                    const leftShoulder = landmarks[11];
-                    const rightShoulder = landmarks[12];
-                    
-                    if (leftWrist && rightWrist && leftShoulder && rightShoulder) {
-                        const leftHandRaised = leftWrist.y < leftShoulder.y;
-                        const rightHandRaised = rightWrist.y < rightShoulder.y;
-                        const handRaised = leftHandRaised || rightHandRaised;
-                        
-                        updateDebug(`
-                            Left: Wrist Y=${leftWrist.y.toFixed(3)} Shoulder Y=${leftShoulder.y.toFixed(3)} ${leftHandRaised ? '✅' : '❌'}
-                            Right: Wrist Y=${rightWrist.y.toFixed(3)} Shoulder Y=${rightShoulder.y.toFixed(3)} ${rightHandRaised ? '✅' : '❌'}
-                            HAND RAISED: ${handRaised ? '✅ YES' : '❌ NO'}
-                        `);
-                        
-                        if (taskActive && !taskStartTime && handRaised) {
-                            taskStartTime = Date.now();
-                            console.log('🎯 TIMER STARTED!');
-                            
-                            timerInterval = setInterval(() => {
-                                const elapsed = (Date.now() - taskStartTime) / 1000;
-                                const remaining = Math.max(0, 10 - elapsed);
-                                updateStatus(`⏱️ ${Math.ceil(remaining)}s remaining - KEEP HAND UP!`);
-                                
-                                if (remaining <= 0) {
-                                    clearInterval(timerInterval);
-                                    taskActive = false;
-                                    updateStatus('✅ SUCCESS! You held for 10 seconds!');
-                                    console.log('✅ SUCCESS!');
-                                }
-                            }, 100);
-                        }
-                        
-                        if (taskStartTime && !handRaised) {
-                            clearInterval(timerInterval);
-                            taskActive = false;
-                            taskStartTime = null;
-                            updateStatus('❌ FAILED - hand lowered too early');
-                            console.log('❌ FAILED');
-                        }
+                } else {
+                    // NO pose detected
+                    if (frameCount % 30 === 0) {
+                        log(`⚠️ NO POSE in frame ${frameCount}. Total detections so far: ${detectionCount}`);
+                        updateStatus(`⚠️ NO POSE DETECTED - Stand back! Frames: ${frameCount}`);
                     }
                     
-                } else {
-                    updateDebug('⚠️ NO POSE DETECTED');
+                    // Draw warning on canvas
+                    ctx.fillStyle = '#ffff00';
+                    ctx.font = 'bold 30px Arial';
+                    ctx.fillText('NO POSE DETECTED', 50, canvas.height / 2);
+                    ctx.font = 'bold 20px Arial';
+                    ctx.fillText('STAND BACK 6 FEET!', 50, canvas.height / 2 + 40);
+                    ctx.fillText('SHOW FULL BODY!', 50, canvas.height / 2 + 70);
                 }
                 
             } catch (err) {
-                console.error('Frame error:', err);
+                log('❌ Frame processing error: ' + err.message);
             }
             
             animationId = requestAnimationFrame(processFrame);
-        }
-
-        function updateStatus(msg) {
-            document.getElementById('status').textContent = msg;
-        }
-
-        function updateDebug(msg) {
-            document.getElementById('debug').innerHTML = msg.replace(/\n/g, '<br>');
         }
     </script>
 </body>
