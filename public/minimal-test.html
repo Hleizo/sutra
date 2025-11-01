@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ABSOLUTE MINIMAL POSE TEST</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #000;
+            color: #0f0;
+        }
+        #container {
+            position: relative;
+            display: inline-block;
+        }
+        video {
+            width: 640px;
+            height: 480px;
+            background: #000;
+            transform: scaleX(-1);
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 640px;
+            height: 480px;
+            transform: scaleX(-1);
+        }
+        button {
+            font-size: 24px;
+            padding: 15px 30px;
+            margin: 10px;
+            cursor: pointer;
+            background: #0f0;
+            color: #000;
+            border: none;
+            font-weight: bold;
+        }
+        #status {
+            font-size: 20px;
+            margin: 20px 0;
+            padding: 15px;
+            background: #111;
+            border: 2px solid #0f0;
+        }
+        #debug {
+            font-size: 16px;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔥 ABSOLUTE MINIMAL MEDIAPIPE TEST 🔥</h1>
+    <div id="status">Click START button</div>
+    <div id="debug"></div>
+    <button onclick="start()">START</button>
+    <button onclick="beginTask()">BEGIN TASK</button>
+    <button onclick="stop()">STOP</button>
+    
+    <div id="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script type="module">
+        import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
+
+        let poseLandmarker = null;
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        let animationId = null;
+        let taskActive = false;
+        let taskStartTime = null;
+        let timerInterval = null;
+
+        window.start = async function() {
+            try {
+                updateStatus('Loading MediaPipe...');
+                console.log('🔵 Loading MediaPipe...');
+                
+                const vision = await FilesetResolver.forVisionTasks(
+                    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+                );
+                console.log('✅ Vision tasks loaded');
+                updateStatus('Creating PoseLandmarker...');
+                
+                poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+                        delegate: 'CPU',
+                    },
+                    runningMode: 'VIDEO',
+                    numPoses: 1,
+                    minPoseDetectionConfidence: 0.5,
+                    minPosePresenceConfidence: 0.5,
+                    minTrackingConfidence: 0.5,
+                });
+                console.log('✅ PoseLandmarker created');
+                updateStatus('Starting camera...');
+                
+                video = document.getElementById('video');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+                
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
+                console.log('✅ Camera stream obtained');
+                
+                video.srcObject = stream;
+                await video.play();
+                console.log('✅ Video playing');
+                
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                console.log(`✅ Canvas: ${canvas.width}x${canvas.height}`);
+                
+                updateStatus('✅ READY! You should see GREEN SKELETON now!');
+                processFrame();
+                
+            } catch (err) {
+                console.error('❌ ERROR:', err);
+                updateStatus('❌ ERROR: ' + err.message);
+            }
+        };
+
+        window.beginTask = function() {
+            taskActive = true;
+            taskStartTime = null;
+            updateStatus('🙌 RAISE YOUR HAND ABOVE SHOULDER!');
+            console.log('▶️ Task ready - raise hand to start timer');
+        };
+
+        window.stop = function() {
+            if (animationId) cancelAnimationFrame(animationId);
+            if (timerInterval) clearInterval(timerInterval);
+            if (video && video.srcObject) {
+                video.srcObject.getTracks().forEach(t => t.stop());
+            }
+            taskActive = false;
+            updateStatus('Stopped');
+        };
+
+        function processFrame() {
+            if (!video || !canvas || !poseLandmarker) return;
+            
+            try {
+                const result = poseLandmarker.detectForVideo(video, performance.now());
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                if (result.landmarks && result.landmarks[0]) {
+                    const landmarks = result.landmarks[0];
+                    
+                    // Draw ALL landmarks GREEN
+                    ctx.fillStyle = '#00ff00';
+                    for (let i = 0; i < landmarks.length; i++) {
+                        const lm = landmarks[i];
+                        if (lm && lm.visibility > 0.3) {
+                            ctx.beginPath();
+                            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 6, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                    }
+                    
+                    // Draw skeleton GREEN
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 3;
+                    const draw = (i1, i2) => {
+                        const lm1 = landmarks[i1];
+                        const lm2 = landmarks[i2];
+                        if (lm1 && lm2 && lm1.visibility > 0.3 && lm2.visibility > 0.3) {
+                            ctx.beginPath();
+                            ctx.moveTo(lm1.x * canvas.width, lm1.y * canvas.height);
+                            ctx.lineTo(lm2.x * canvas.width, lm2.y * canvas.height);
+                            ctx.stroke();
+                        }
+                    };
+                    
+                    // Body connections
+                    draw(11, 12); draw(11, 23); draw(12, 24); draw(23, 24);
+                    draw(11, 13); draw(13, 15); draw(12, 14); draw(14, 16);
+                    draw(23, 25); draw(25, 27); draw(24, 26); draw(26, 28);
+                    
+                    // RED dots on shoulders and wrists
+                    ctx.fillStyle = '#ff0000';
+                    [11, 12, 15, 16].forEach(idx => {
+                        const lm = landmarks[idx];
+                        if (lm && lm.visibility > 0.3) {
+                            ctx.beginPath();
+                            ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 12, 0, 2 * Math.PI);
+                            ctx.fill();
+                        }
+                    });
+                    
+                    // Check hand raised
+                    const leftWrist = landmarks[15];
+                    const rightWrist = landmarks[16];
+                    const leftShoulder = landmarks[11];
+                    const rightShoulder = landmarks[12];
+                    
+                    if (leftWrist && rightWrist && leftShoulder && rightShoulder) {
+                        const leftHandRaised = leftWrist.y < leftShoulder.y;
+                        const rightHandRaised = rightWrist.y < rightShoulder.y;
+                        const handRaised = leftHandRaised || rightHandRaised;
+                        
+                        updateDebug(`
+                            Left: Wrist Y=${leftWrist.y.toFixed(3)} Shoulder Y=${leftShoulder.y.toFixed(3)} ${leftHandRaised ? '✅' : '❌'}
+                            Right: Wrist Y=${rightWrist.y.toFixed(3)} Shoulder Y=${rightShoulder.y.toFixed(3)} ${rightHandRaised ? '✅' : '❌'}
+                            HAND RAISED: ${handRaised ? '✅ YES' : '❌ NO'}
+                        `);
+                        
+                        if (taskActive && !taskStartTime && handRaised) {
+                            taskStartTime = Date.now();
+                            console.log('🎯 TIMER STARTED!');
+                            
+                            timerInterval = setInterval(() => {
+                                const elapsed = (Date.now() - taskStartTime) / 1000;
+                                const remaining = Math.max(0, 10 - elapsed);
+                                updateStatus(`⏱️ ${Math.ceil(remaining)}s remaining - KEEP HAND UP!`);
+                                
+                                if (remaining <= 0) {
+                                    clearInterval(timerInterval);
+                                    taskActive = false;
+                                    updateStatus('✅ SUCCESS! You held for 10 seconds!');
+                                    console.log('✅ SUCCESS!');
+                                }
+                            }, 100);
+                        }
+                        
+                        if (taskStartTime && !handRaised) {
+                            clearInterval(timerInterval);
+                            taskActive = false;
+                            taskStartTime = null;
+                            updateStatus('❌ FAILED - hand lowered too early');
+                            console.log('❌ FAILED');
+                        }
+                    }
+                    
+                } else {
+                    updateDebug('⚠️ NO POSE DETECTED');
+                }
+                
+            } catch (err) {
+                console.error('Frame error:', err);
+            }
+            
+            animationId = requestAnimationFrame(processFrame);
+        }
+
+        function updateStatus(msg) {
+            document.getElementById('status').textContent = msg;
+        }
+
+        function updateDebug(msg) {
+            document.getElementById('debug').innerHTML = msg.replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
