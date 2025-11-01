@@ -1,0 +1,59 @@
+# Docker Compose for Development
+# Use this for development with hot-reload support
+
+version: '3.8'
+
+services:
+  # Frontend Service (Development mode with Vite)
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
+    container_name: virtual-mirror-frontend-dev
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.ts:/app/vite.config.ts
+      - /app/node_modules
+    depends_on:
+      - backend-dev
+    networks:
+      - virtual-mirror-network
+    command: npm run dev -- --host 0.0.0.0
+
+  # Backend Service (Development mode with auto-reload)
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: virtual-mirror-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./data/virtual_mirror.db
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - ENVIRONMENT=development
+      - MAX_UPLOAD_SIZE=10485760
+      - TTS_ENABLED=true
+    volumes:
+      - ./backend:/app
+      - backend-data:/app/data
+      - backend-reports:/app/reports
+    networks:
+      - virtual-mirror-network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  virtual-mirror-network:
+    driver: bridge
+
+volumes:
+  backend-data:
+    driver: local
+  backend-reports:
+    driver: local
